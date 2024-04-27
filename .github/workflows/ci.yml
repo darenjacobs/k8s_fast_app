@@ -132,6 +132,10 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v2
 
+      - name: Create Bucket
+        shell: bash
+        run: ./remote_state.sh
+
       - name: Terraform Format
         id: fmt
         run: terraform fmt -check
@@ -176,3 +180,7 @@ jobs:
       - name: Terraform destroy
         id: destroy
         run: terraform destroy -auto-approve
+
+      - name: Destroy Bucket
+        shell: bash
+        run: ./remove_remote_state.sh

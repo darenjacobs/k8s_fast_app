@@ -18,6 +18,9 @@ docker build -t ${DOCKER_USERNAME}/fast-app .
 docker image tag fast-app ${DOCKER_USERNAME}/fast-app:latest
 docker push ${DOCKER_USERNAME}/fast-app:latest
 
+# Bucket creation
+sh remote_state.sh
+
 # Run terraform
 terraform init
 terraform plan -out sample.plan
@@ -37,3 +40,6 @@ sleep 10
 rm -rf terraform.tfstate*
 rm -rf .terraform
 rm sample.plan
+
+# Bucket deletion
+sh remove_remote_state.sh
