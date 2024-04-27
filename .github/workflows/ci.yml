@@ -29,6 +29,8 @@ jobs:
         # Install specific FastAPI dependencies
         python -m pip install fastapi uvicorn pytest pytest-asyncio httpx
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names

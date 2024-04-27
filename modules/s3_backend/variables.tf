@@ -21,7 +21,7 @@ variable "kms_key_enable_key_rotation" {
 variable "s3_bucket_name" {
   description = "Name for this S3 bucket.  It has to be unique so make it good"
   type = string
-  default = "terraform-remote-state-pb0004888"
+  default = "terraform-remote-state-pb0005888"
 }
 
 variable "s3_bucket_force_destroy" {
