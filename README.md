@@ -50,6 +50,6 @@ After two minutes the cluster will automatically be destroyed.
 ### SET SECRETS
 - AWS_ACCESS_KEY - Access Key ID to service account with permissions to create an EKS cluster
 - AWS_SECRET_KEY - Secret Access key to a service account with permissions to create an EKS  cluster
-- DOCKER_NAME - flask-app
+- DOCKER_NAME - fast-app
 - DOCKER_USERNAME - your dockerhub username
 - DOCKER_PASSWORD - your dockerhub password
