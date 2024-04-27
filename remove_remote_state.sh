@@ -1,5 +1,5 @@
 this_bucket="terraform-remote-state-pb0005888"
-log_file="../../deletion_log.txt"
+log_file="deletion_log.txt"
 
 if [[ ! -d "modules/s3_backend" ]]; then
   echo "Backend S3 Modules directory not found"
