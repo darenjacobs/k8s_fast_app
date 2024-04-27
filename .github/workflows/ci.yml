@@ -1,0 +1,178 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+
+name: Python package
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  run_test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install specific FastAPI dependencies
+        python -m pip install fastapi uvicorn pytest pytest-asyncio httpx
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest --suppress-no-test-exit-code
+    - name: Run the app
+      run: |
+        uvicorn app.main:app --host 0.0.0.0 --port 8080 &
+      shell: bash
+    - name: Connect to the App
+      run: |
+        sleep 10  # Give some time for the server to start
+        curl http://127.0.0.1:8080
+      shell: bash
+
+
+  build:
+    needs: [run_test]
+    runs-on: ubuntu-latest
+    env:
+      LOGIN: ${{ secrets.DOCKER_USERNAME }}
+      NAME: ${{ secrets.DOCKER_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker Version
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_NAME }}:latest, ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_NAME }}:${{ github.run_number }}
+          # tags: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_NAME }}:latest
+
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    env:
+      AWS_DEFAULT_REGION: "us-east-2"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Create credentials file
+        run: |
+          mkdir -p ~/.aws
+          echo "[default]" >> ~/.aws/credentials
+          echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_KEY }}" >> ~/.aws/credentials
+
+      - name: Install AWS CLI
+        id: install-aws-cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2     # default
+          verbose: false # default
+          arch: amd64    # allowed values: amd64, arm64
+          rootdir: ""    # defaults to "PWD"
+          workdir: ""    # defaults to "PWD/unfor19-awscli"
+
+      - name: Install Eksctl
+        shell: bash
+        run: |
+          # for ARM systems, set ARCH to: `arm64`, `armv6` or `armv7`
+          ARCH=amd64
+          PLATFORM=$(uname -s)_$ARCH
+          curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+          # (Optional) Verify checksum
+          curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_checksums.txt" | grep $PLATFORM | sha256sum --check
+          tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+          sudo mv /tmp/eksctl /usr/local/bin
+
+      - name: Check if the Cluster Exists
+        run: |
+          aws eks update-kubeconfig --region us-east-2 --name my-cluster 2>&1 | tee output.txt
+
+      - name: Delete the Cluster if it Exists
+        if: always()
+        shell: bash
+        run: |
+          var=$(cat output.txt)
+          if ! [[ "${var}" =~ "error" ]]; then echo "***DELETING EKS CLUSTER***: my-cluster"; \
+            eksctl delete cluster --name my-cluster --region us-east-2; \
+            aws kms delete-alias --region us-east-2  --alias-name alias/eks/my-cluster; fi
+
+
+      # Terraform
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -out sample.plan
+        continue-on-error: true
+
+      - name: Terraform Apply
+        id: apply
+        run: terraform apply -auto-approve sample.plan
+
+      - name: Install Kubectl
+        shell: bash
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          chmod +x kubectl
+          mkdir -p ~/.local/bin
+          mv ./kubectl ~/.local/bin/kubectl
+          export PATH="$HOME/.local/bin:$PATH"
+
+      - name: Additional Automated Test
+        shell: bash
+        run: |
+          aws eks update-kubeconfig --region us-east-2 --name my-cluster
+          kubectl get nodes
+          bash page_test.sh
+
+      - name: Application Online before destroy
+        shell: bash
+        run: |
+          sleep 300
+
+      - name: Terraform destroy
+        id: destroy
+        run: terraform destroy -auto-approve
