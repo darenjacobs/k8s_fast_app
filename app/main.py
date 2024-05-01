@@ -6,7 +6,7 @@ app = FastAPI()
 @app.get("/")
 async def health_check():
     """ Create a health check for the app """
-    return {"status": "Healthy"}
+    return {"status": "healthy"}
 
 
 def is_fibonacci(n: int) -> bool:
